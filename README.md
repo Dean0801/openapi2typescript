@@ -8,11 +8,11 @@
 ### Installation
 
 ```bash
-npm i --save-dev @yoda/openapi2typescript
+npm i --save-dev @bf-openapi2typescript
 # or
-pnpm add -D @yoda/openapi2typescript
+pnpm add -D @bf-openapi2typescript
 # or
-yarn add -D @yoda/openapi2typescript
+yarn add -D @bf-openapi2typescript
 ```
 
 ### Usage
@@ -142,11 +142,11 @@ export async function updateUser(id: string, data: UserApi.UpdateUserBody) {
 ### 安装
 
 ```bash
-npm i --save-dev @yoda/openapi2typescript
+npm i --save-dev @bf-openapi2typescript
 # 或者
-pnpm add -D @yoda/openapi2typescript
+pnpm add -D @bf-openapi2typescript
 # 或者
-yarn add -D @yoda/openapi2typescript
+yarn add -D @bf-openapi2typescript
 ```
 
 ### 使用方法
