@@ -139,10 +139,18 @@ const gen = async () => {
     },
   });
 
+  // await openAPI.generateService({
+  //   schemaPath: `${__dirname}/example-files/swagger-splitdeclare.json`,
+  //   serversPath: './splitDeclare',
+  //   splitDeclare:true
+  // });
+
+  // 测试合并模式：类型定义和请求函数在同一个文件中
   await openAPI.generateService({
-    schemaPath: `${__dirname}/example-files/swagger-splitdeclare.json`,
-    serversPath: './splitDeclare',
-    splitDeclare:true
+    schemaPath: `${__dirname}/example-files/apispec_1.json`,
+    serversPath: './merged-mode',
+    mergedMode: true,
+    requestImportStatement: "import { requestClient } from '#/api/request';",
   });
 };
 gen();

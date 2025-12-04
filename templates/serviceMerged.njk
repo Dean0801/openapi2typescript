@@ -1,0 +1,193 @@
+// @ts-ignore
+/* eslint-disable */
+{{ requestImportStatement }}
+
+export namespace {{ className }}Api {
+{# ========== Schema 类型定义 ========== #}
+{%- set schemaTypeNames = [] -%}
+{%- for type in schemaTypes -%}
+  {%- set _ = schemaTypeNames.push(type.typeName) -%}
+{%- endfor -%}
+{%- set useInterface = declareType === 'interface' -%}
+
+{% for type in schemaTypes -%}
+  {%- if type.props.length %}
+    {%- if type.isEnum %}
+  enum {{ type.typeName | safe }} 
+    {%- else %}
+  /** {{ type.typeName }} */
+      {%- if useInterface %}
+  export interface {{ type.typeName | safe }}
+      {%- else %}
+  export type {{ type.typeName | safe }} =
+      {%- endif %}
+    {%- endif %}
+    {%- for prop in type.props %}
+      {%- if prop.length > 1 %}
+    {
+      {%- endif %}
+      {%- if prop.length == 1 %}
+        {%- if not prop[0].$ref or prop[0].name %}
+    {
+        {%- endif %}
+      {%- endif %}
+        {%- for p in prop %}
+          {%- if p.desc %}
+    /** {{ p.desc }} */
+          {%- endif %}
+          {%- if p["$ref"] and not p.name %}
+    // {{ p.$ref }}
+    {{ p.type | replace("API.", className + "Api.") | safe }}
+          {%- else %}
+            {%- set propType = p.type | replace("API.", className + "Api.") -%}
+            {# 为 schema 中定义的类型添加命名空间前缀 #}
+            {%- for schemaTypeName in schemaTypeNames -%}
+              {%- set propType = propType | replace(schemaTypeName + "[]", className + "Api." + schemaTypeName + "[]") -%}
+              {%- set propType = propType | replace(schemaTypeName + ";", className + "Api." + schemaTypeName + ";") -%}
+              {%- set propType = propType | replace(schemaTypeName + " ", className + "Api." + schemaTypeName + " ") -%}
+              {%- set propType = propType | replace(schemaTypeName + "}", className + "Api." + schemaTypeName + "}") -%}
+              {%- set propType = propType | replace(schemaTypeName + ")", className + "Api." + schemaTypeName + ")") -%}
+              {%- set propType = propType | replace(": " + schemaTypeName, ": " + className + "Api." + schemaTypeName) -%}
+            {%- endfor -%}
+    '{{ p.name }}'{{ '' if p.required else '?' }}: {{ propType | safe }};
+          {%- endif %}
+        {%- endfor %}
+      {%- if prop.length > 1 %}
+    }
+      {%- endif %}
+      {%- if prop.length == 1 %}
+        {%- if not prop[0].$ref or prop[0].name %}
+    }
+        {%- endif %}
+      {%- endif %}
+      {%- if prop.length == 0 %}
+    {}
+      {%- endif %}
+      {%- if not useInterface %}
+      {{ '' if loop.last === true else ' & '  }}
+      {%- endif %}
+    {%- endfor %}{{ '' if useInterface else ';' }}
+  {%- else %}
+    {%- if type.isEnum  %}
+  enum {{ type.typeName | safe }} {{ type.type | replace("API.", className + "Api.") | safe }};
+    {%- else %}
+      {%- set typeValue = type.type | replace("API.", className + "Api.") -%}
+      {# 为 schema 中定义的类型添加命名空间前缀 #}
+      {%- for schemaTypeName in schemaTypeNames -%}
+        {%- set typeValue = typeValue | replace(schemaTypeName + "[]", className + "Api." + schemaTypeName + "[]") -%}
+        {%- set typeValue = typeValue | replace(schemaTypeName + ";", className + "Api." + schemaTypeName + ";") -%}
+        {%- set typeValue = typeValue | replace(schemaTypeName + " ", className + "Api." + schemaTypeName + " ") -%}
+        {%- set typeValue = typeValue | replace(schemaTypeName + "}", className + "Api." + schemaTypeName + "}") -%}
+        {%- set typeValue = typeValue | replace(schemaTypeName + ")", className + "Api." + schemaTypeName + ")") -%}
+        {%- set typeValue = typeValue | replace(": " + schemaTypeName, ": " + className + "Api." + schemaTypeName) -%}
+      {%- endfor -%}
+  export type {{ type.typeName | safe }} = {{ typeValue | safe }};
+    {%- endif %}
+  {%- endif %}
+
+{% endfor %}
+{# ========== API 请求参数类型 ========== #}
+{% for api in list -%}
+{% if api.params and api.params.query and api.params.query.length > 0 %}
+  /** {{ api.desc if api.desc else api.functionName }} 参数 */
+  export interface {{ api.functionName | upperFirst }}Params {
+  {%- for param in api.params.query %}
+    {% if param.description -%}
+    /** {{ param.description }} */
+    {% endif -%}
+    {{ param.name }}{{ "?" if not param.required }}: {{ param.type | replace("API.", className + "Api.") | safe }};
+  {%- endfor %}
+  }
+{% endif %}
+
+{% if api.body and api.body.propertiesList and api.body.propertiesList.length > 0 %}
+  /** {{ api.desc if api.desc else api.functionName }} 请求体 */
+  export interface {{ api.functionName | upperFirst }}Body {
+  {%- for prop in api.body.propertiesList %}
+    {% if prop.schema.description -%}
+    /** {{ prop.schema.description }} */
+    {% endif -%}
+    {{ prop.key }}{{ "?" if not prop.schema.required }}: {{ prop.schema.type | replace("API.", className + "Api.") | safe }};
+  {%- endfor %}
+  }
+{% endif %}
+{%- endfor %}
+}
+
+{% for api in list -%}
+/**
+ * {{ api.desc if api.desc else '此处后端没有提供注释' }}
+ * {{ api.method | upper }} {{ api.pathInComment | safe }}
+ */
+export async function {{ api.functionName }}(
+{%- set hasPathParams = api.params and api.params.path and api.params.path.length > 0 -%}
+{%- set hasQueryParams = api.params and api.params.query and api.params.query.length > 0 -%}
+{%- set hasBody = api.body and (api.body.propertiesList or api.body.type) -%}
+{%- if hasPathParams -%}
+{%- for param in api.params.path %}
+  {{ param.name }}: string,
+{%- endfor %}
+{%- endif -%}
+{%- if hasQueryParams %}
+  params{% if hasPathParams or hasBody %}?{% endif %}: {{ className }}Api.{{ api.functionName | upperFirst }}Params,
+{%- endif -%}
+{%- if hasBody %}
+  {% if api.body.propertiesList and api.body.propertiesList.length > 0 -%}
+  data: {{ className }}Api.{{ api.functionName | upperFirst }}Body,
+  {%- else -%}
+  data: {{ api.body.type | replace("API.", className + "Api.") | safe }},
+  {%- endif %}
+{%- endif %}
+) {
+  {%- set responseType = 'any' -%}
+  {%- if api.response and api.response.type and api.response.type !== 'any' -%}
+    {%- set responseType = api.response.type | replace("API.", className + "Api.") -%}
+  {%- endif %}
+  {%- if api.method === 'get' %}
+  return requestClient.get<{{ responseType | safe }}>(
+    {% if api.hasPathVariables %}`{{ api.path | safe }}`{% else %}'{{ api.path }}'{% endif %},
+    {%- if hasQueryParams %}
+    { params },
+    {%- endif %}
+  );
+  {%- elif api.method === 'post' %}
+  return requestClient.post<{{ responseType | safe }}>(
+    {% if api.hasPathVariables %}`{{ api.path | safe }}`{% else %}'{{ api.path }}'{% endif %},
+    {%- if hasBody %}
+    data,
+    {%- endif %}
+    {%- if hasQueryParams %}
+    { params },
+    {%- endif %}
+  );
+  {%- elif api.method === 'put' %}
+  return requestClient.put<{{ responseType | safe }}>(
+    {% if api.hasPathVariables %}`{{ api.path | safe }}`{% else %}'{{ api.path }}'{% endif %},
+    {%- if hasBody %}
+    data,
+    {%- endif %}
+    {%- if hasQueryParams %}
+    { params },
+    {%- endif %}
+  );
+  {%- elif api.method === 'delete' %}
+  return requestClient.delete<{{ responseType | safe }}>(
+    {% if api.hasPathVariables %}`{{ api.path | safe }}`{% else %}'{{ api.path }}'{% endif %},
+    {%- if hasQueryParams %}
+    { params },
+    {%- endif %}
+  );
+  {%- elif api.method === 'patch' %}
+  return requestClient.patch<{{ responseType | safe }}>(
+    {% if api.hasPathVariables %}`{{ api.path | safe }}`{% else %}'{{ api.path }}'{% endif %},
+    {%- if hasBody %}
+    data,
+    {%- endif %}
+    {%- if hasQueryParams %}
+    { params },
+    {%- endif %}
+  );
+  {%- endif %}
+}
+
+{% endfor -%}

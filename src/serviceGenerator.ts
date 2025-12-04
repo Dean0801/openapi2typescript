@@ -26,7 +26,7 @@ import fs from 'fs';
 
 const BASE_DIRS = ['service', 'services'];
 
-export type TypescriptFileType = 'interface' | 'serviceController' | 'serviceIndex';
+export type TypescriptFileType = 'interface' | 'serviceController' | 'serviceIndex' | 'serviceMerged';
 
 export interface APIDataType extends OperationObject {
   path: string;
@@ -347,7 +347,10 @@ class ServiceGenerator {
           tags = defaultGetFileTag(operationObject, p, method);
         }
 
-        tags.forEach((tagString) => {
+        // 如果配置了 useFirstTagOnly，只使用第一个 tag，避免 API 重复生成到多个文件
+        const tagsToUse = this.config.useFirstTagOnly ? [tags[0]] : tags;
+        
+        tagsToUse.forEach((tagString) => {
           const tag = this.config.isCamelCase
             ? camelCase(resolveTypeName(tagString))
             : resolveTypeName(tagString);
@@ -379,6 +382,13 @@ class ServiceGenerator {
     } catch (error) {
       Log(`🚥 serves 生成失败: ${error}`);
     }
+
+    // 合并模式：类型定义和请求函数在同一个文件中
+    if (this.config.mergedMode) {
+      this.genMergedFiles();
+      return;
+    }
+
     if(!this.config.splitDeclare){
       // 生成 ts 类型声明
       this.genFileFromTemplate('typings.d.ts', 'interface', {
@@ -423,14 +433,257 @@ class ServiceGenerator {
     if (prettierError.includes(true)) {
       Log(`🚥 格式化失败，请检查 service 文件内可能存在的语法错误`);
     }
-    // 生成 index 文件
-    this.genFileFromTemplate(`index.ts`, 'serviceIndex', {
-      list: this.classNameList,
-      disableTypeCheck: false,
-    });
+    // 生成 index 文件（如果配置允许）
+    if (this.config.generateIndex !== false) {
+      this.genFileFromTemplate(`index.ts`, 'serviceIndex', {
+        list: this.classNameList,
+        disableTypeCheck: false,
+      });
+    }
 
     // 打印日志
     Log(`✅ 成功生成 service 文件`);
+  }
+
+  /**
+   * 合并模式生成文件：类型定义和请求函数在同一个文件中
+   * 生成格式类似：
+   * export namespace UserApi {
+   *   export interface GetUserParams { ... }
+   *   export interface User { ... }
+   * }
+   * export async function getUser(params: UserApi.GetUserParams) { ... }
+   */
+  private genMergedFiles() {
+    const prettierError = [];
+    
+    // 获取所有 schemas 类型定义
+    const schemaTypes = this.getSchemaTypes();
+    
+    this.getServiceTP().forEach((tp) => {
+      // 收集当前 tag 下所有 API 使用的类型引用
+      const usedTypes = this.collectUsedTypes(tp.list);
+      // 过滤出当前文件需要的 schema 类型
+      const filteredSchemaTypes = schemaTypes.filter(t => usedTypes.has(t.typeName));
+      
+      const hasError = this.genFileFromTemplate(
+        this.getFinalFileName(`${tp.className}.ts`),
+        'serviceMerged',
+        {
+          requestImportStatement: this.config.requestImportStatement,
+          disableTypeCheck: false,
+          schemaTypes: filteredSchemaTypes,
+          declareType: this.config.declareType || 'type',
+          ...tp,
+        },
+      );
+      prettierError.push(hasError);
+    });
+
+    if (prettierError.includes(true)) {
+      Log(`🚥 格式化失败，请检查 service 文件内可能存在的语法错误`);
+    }
+
+    // 生成 index 文件（如果配置允许）
+    if (this.config.generateIndex !== false) {
+      this.genFileFromTemplate(`index.ts`, 'serviceIndex', {
+        list: this.classNameList,
+        disableTypeCheck: false,
+      });
+    }
+
+    Log(`✅ 成功生成 service 文件 (合并模式)`);
+  }
+
+  /**
+   * 获取所有 schemas 中的类型定义
+   */
+  private getSchemaTypes() {
+    const { components } = this.openAPIData;
+    if (!components || !components.schemas) {
+      return [];
+    }
+
+    return Object.keys(components.schemas).map((typeName) => {
+      const schema = components.schemas[typeName];
+      const result = this.resolveObject(schema);
+
+      const getDefinesType = () => {
+        if (result.type) {
+          return (schema as SchemaObject).type === 'object' || result.type;
+        }
+        return 'Record<string, any>';
+      };
+
+      return {
+        typeName: resolveTypeName(typeName),
+        type: getDefinesType(),
+        parent: result.parent,
+        props: result.props || [],
+        isEnum: result.isEnum,
+      };
+    });
+  }
+
+  /**
+   * 收集 API 列表中使用的所有类型引用
+   */
+  private collectUsedTypes(apiList: any[]): Set<string> {
+    const usedTypes = new Set<string>();
+    const { components } = this.openAPIData;
+    const allSchemaNames = components?.schemas ? Object.keys(components.schemas).map(k => resolveTypeName(k)) : [];
+    
+    const extractTypeRefs = (typeStr: string) => {
+      if (!typeStr) return;
+      // 匹配 API.TypeName 格式的引用
+      const apiMatches = typeStr.match(/API\.(\w+)/g);
+      if (apiMatches) {
+        apiMatches.forEach(match => {
+          const typeName = match.replace('API.', '');
+          usedTypes.add(typeName);
+        });
+      }
+      // 同时检查是否直接使用了 schema 中定义的类型名（不带 API. 前缀）
+      allSchemaNames.forEach(schemaName => {
+        // 使用单词边界匹配，避免部分匹配
+        const regex = new RegExp(`\\b${schemaName}\\b`);
+        if (regex.test(typeStr)) {
+          usedTypes.add(schemaName);
+        }
+      });
+    };
+
+    apiList.forEach(api => {
+      // 从响应类型中提取
+      if (api.response?.type) {
+        extractTypeRefs(api.response.type);
+      }
+      // 从 body 类型中提取
+      if (api.body?.type) {
+        extractTypeRefs(api.body.type);
+      }
+      // 从 body propertiesList 中提取
+      if (api.body?.propertiesList) {
+        api.body.propertiesList.forEach((prop: any) => {
+          if (prop.schema?.type) {
+            extractTypeRefs(prop.schema.type);
+          }
+        });
+      }
+      // 从参数类型中提取
+      if (api.params) {
+        ['query', 'path', 'header'].forEach(paramType => {
+          if (api.params[paramType]) {
+            api.params[paramType].forEach((param: any) => {
+              if (param.type) {
+                extractTypeRefs(param.type);
+              }
+            });
+          }
+        });
+      }
+    });
+
+    // 递归查找依赖的类型
+    this.expandTypeDependencies(usedTypes, extractTypeRefs);
+
+    return usedTypes;
+  }
+
+  /**
+   * 递归展开类型依赖
+   */
+  private expandTypeDependencies(usedTypes: Set<string>, extractTypeRefs: (typeStr: string) => void) {
+    const { components } = this.openAPIData;
+    if (!components || !components.schemas) return;
+
+    let hasNew = true;
+    const processed = new Set<string>();
+    
+    while (hasNew) {
+      hasNew = false;
+      const currentTypes = Array.from(usedTypes);
+      
+      currentTypes.forEach(typeName => {
+        if (processed.has(typeName)) return;
+        processed.add(typeName);
+        
+        // 查找原始 schema 名称（可能与 resolveTypeName 处理后的名称不同）
+        const originalName = Object.keys(components.schemas).find(
+          k => resolveTypeName(k) === typeName
+        );
+        if (!originalName) return;
+        
+        const schema = components.schemas[originalName];
+        if (!schema) return;
+
+        const checkSchema = (s: any) => {
+          if (!s) return;
+          // 检查 $ref
+          if (s.$ref) {
+            const refName = s.$ref.split('/').pop();
+            const resolvedName = resolveTypeName(refName);
+            if (!usedTypes.has(resolvedName)) {
+              usedTypes.add(resolvedName);
+              hasNew = true;
+            }
+          }
+          // 检查 properties
+          if (s.properties) {
+            Object.values(s.properties).forEach((prop: any) => {
+              checkSchema(prop);
+              // 额外检查属性类型字符串中的类型引用
+              if (prop.type === 'object' || prop.$ref) {
+                // 已经在上面处理
+              }
+            });
+          }
+          // 检查 items (数组)
+          if (s.items) {
+            checkSchema(s.items);
+          }
+          // 检查 allOf
+          if (s.allOf) {
+            s.allOf.forEach((item: any) => checkSchema(item));
+          }
+          // 检查 oneOf
+          if (s.oneOf) {
+            s.oneOf.forEach((item: any) => checkSchema(item));
+          }
+          // 检查 anyOf
+          if (s.anyOf) {
+            s.anyOf.forEach((item: any) => checkSchema(item));
+          }
+        };
+
+        checkSchema(schema);
+        
+        // 额外从已解析的类型定义中提取引用
+        const result = this.resolveObject(schema);
+        if (result.props) {
+          result.props.forEach((propGroup: any[]) => {
+            if (Array.isArray(propGroup)) {
+              propGroup.forEach((prop: any) => {
+                if (prop.type) {
+                  const oldSize = usedTypes.size;
+                  extractTypeRefs(prop.type);
+                  if (usedTypes.size > oldSize) {
+                    hasNew = true;
+                  }
+                }
+              });
+            }
+          });
+        }
+        if (result.type && typeof result.type === 'string') {
+          const oldSize = usedTypes.size;
+          extractTypeRefs(result.type);
+          if (usedTypes.size > oldSize) {
+            hasNew = true;
+          }
+        }
+      });
+    }
   }
 
   public concatOrNull = (...arrays) => {
@@ -916,9 +1169,14 @@ class ServiceGenerator {
   ): boolean {
     try {
       const template = this.getTemplate(type);
-      // 设置输出不转义
-      nunjucks.configure({
+      // 配置 nunjucks
+      const env = nunjucks.configure({
         autoescape: false,
+      });
+      // 添加自定义过滤器：首字母大写（保留原有驼峰格式）
+      env.addFilter('upperFirst', (str: string) => {
+        if (!str) return str;
+        return str.charAt(0).toUpperCase() + str.slice(1);
       });
       return writeFile(this.finalPath, fileName, nunjucks.renderString(template, params));
     } catch (error) {
@@ -928,7 +1186,7 @@ class ServiceGenerator {
     }
   }
 
-  private getTemplate(type: 'interface' | 'serviceController' | 'serviceIndex'): string {
+  private getTemplate(type: TypescriptFileType): string {
     return readFileSync(join(this.config.templatesFolder, `${type}.njk`), 'utf8');
   }
 

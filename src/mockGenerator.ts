@@ -88,8 +88,6 @@ Mock.Random.extend({
       'https://preview.pro.ant.design/dashboard/analysis',
       'https://ant.design',
       'https://procomponents.ant.design/',
-      'https://umijs.org/',
-      'https://github.com/umijs/dumi',
     ];
     const id = (Math.random() * href.length).toFixed();
     return href[id];

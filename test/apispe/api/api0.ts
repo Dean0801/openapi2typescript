@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from 'umi';
+import { request } from 'request';
 
 /** Run Template API POST /agent/runtemplate */
 export async function postAgentRuntemplate(options?: { [key: string]: any }) {
@@ -26,7 +26,7 @@ export async function postLicenceActive(body: {}, file?: File, options?: { [key:
         if (item instanceof Array) {
           item.forEach((f) => formData.append(ele, f || ''));
         } else {
-          formData.append(ele, JSON.stringify(item));
+          formData.append(ele, new Blob([JSON.stringify(item)], { type: 'application/json' }));
         }
       } else {
         formData.append(ele, item);

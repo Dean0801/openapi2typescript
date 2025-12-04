@@ -1,23 +1,18 @@
 # OpenAPI to TypeScript Generator (OpenAPI TypeScript 生成器)
 
-[![GitHub Repo stars](https://img.shields.io/github/stars/chenshuai2144/openapi2typescript?style=social)](https://github.com/chenshuai2144/openapi2typescript) [![npm (scoped)](https://img.shields.io/npm/v/@umijs/openapi)](https://www.npmjs.com/package/@umijs/openapi) ![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/chenshuai2144/openapi2typescript?include_prereleases)
-
 [English](#english) | [中文](#chinese)
 
 <a name="english"></a>
 ## English
 
-### Introduction
-A powerful tool that generates TypeScript request code from [OpenAPI 3.0](https://swagger.io/blog/news/whats-new-in-openapi-3-0/) documentation. If you're using [umi](https://umijs.org), you might want to check out [@umijs/plugin-openapi](https://www.npmjs.com/package/@umijs/plugin-openapi) plugin instead.
-
 ### Installation
 
 ```bash
-npm i --save-dev @umijs/openapi
+npm i --save-dev @yoda/openapi2typescript
 # or
-pnpm add -D @umijs/openapi
+pnpm add -D @yoda/openapi2typescript
 # or
-yarn add -D @umijs/openapi
+yarn add -D @yoda/openapi2typescript
 ```
 
 ### Usage
@@ -81,7 +76,51 @@ npm run openapi2ts
 | dataFields | No | Data fields in response | string[] | - |
 | isCamelCase | No | Use camelCase for files and functions | boolean | true |
 | declareType | No | Interface declaration type | type/interface | type |
-| splitDeclare | No | Generate a separate .d.ts file for each tag group. | boolean | - |
+| splitDeclare | No | Generate a separate .d.ts file for each tag group | boolean | false |
+| mergedMode | No | Merge types and functions into one file | boolean | false |
+| useFirstTagOnly | No | Use only the first tag when API has multiple tags (avoid duplicates) | boolean | false |
+| generateIndex | No | Generate index.ts export file | boolean | true |
+
+### Merged Mode
+
+When `mergedMode` is enabled, types and request functions will be generated in the same file with `export namespace`:
+
+```typescript
+export default {
+  schemaPath: 'http://petstore.swagger.io/v2/swagger.json',
+  serversPath: './src/api',
+  mergedMode: true,
+  requestImportStatement: "import { requestClient } from '#/api/request';",
+}
+```
+
+Generated output example:
+
+```typescript
+import { requestClient } from '#/api/request';
+
+export namespace UserApi {
+  export interface GetUserListParams {
+    page?: string;
+    pageSize?: string;
+  }
+  
+  export interface User {
+    id: string;
+    userName: string;
+  }
+  
+  export type GetUserListResponse = { users: User[]; total: string };
+}
+
+export async function getUserList(params: UserApi.GetUserListParams) {
+  return requestClient.get<UserApi.GetUserListResponse>('/api/user', { params });
+}
+
+export async function updateUser(id: string, data: UserApi.UpdateUserBody) {
+  return requestClient.put<UserApi.UpdateUserResponse>(`/api/user/${id}`, data);
+}
+```
 
 ### Custom Hooks
 
@@ -98,16 +137,16 @@ npm run openapi2ts
 ## 中文
 
 ### 介绍
-一个强大的工具，可以根据 [OpenAPI 3.0](https://swagger.io/blog/news/whats-new-in-openapi-3-0/) 文档生成 TypeScript 请求代码。如果你使用 [umi](https://umijs.org)，可以考虑使用 [@umijs/plugin-openapi](https://www.npmjs.com/package/@umijs/plugin-openapi) 插件。
+一个工具，可以根据 [OpenAPI 3.0](https://swagger.io/blog/news/whats-new-in-openapi-3-0/) 文档生成 TypeScript 请求代码。
 
 ### 安装
 
 ```bash
-npm i --save-dev @umijs/openapi
+npm i --save-dev @yoda/openapi2typescript
 # 或者
-pnpm add -D @umijs/openapi
+pnpm add -D @yoda/openapi2typescript
 # 或者
-yarn add -D @umijs/openapi
+yarn add -D @yoda/openapi2typescript
 ```
 
 ### 使用方法
@@ -171,7 +210,51 @@ npm run openapi2ts
 | dataFields | 否 | response 中数据字段 | string[] | - |
 | isCamelCase | 否 | 小驼峰命名文件和请求函数 | boolean | true |
 | declareType | 否 | interface 声明类型 | type/interface | type |
-| splitDeclare | 否 | 每个tag组一个独立的.d.ts. | boolean | - |
+| splitDeclare | 否 | 每个 tag 组生成独立的 .d.ts 文件 | boolean | false |
+| mergedMode | 否 | 合并模式：类型和函数生成在同一文件中 | boolean | false |
+| useFirstTagOnly | 否 | 当 API 有多个 tags 时只使用第一个（避免重复生成） | boolean | false |
+| generateIndex | 否 | 是否生成 index.ts 导出文件 | boolean | true |
+
+### 合并模式 (Merged Mode)
+
+启用 `mergedMode` 后，类型定义和请求函数将生成在同一个文件中，使用 `export namespace` 格式：
+
+```typescript
+export default {
+  schemaPath: 'http://petstore.swagger.io/v2/swagger.json',
+  serversPath: './src/api',
+  mergedMode: true,
+  requestImportStatement: "import { requestClient } from '#/api/request';",
+}
+```
+
+生成结果示例：
+
+```typescript
+import { requestClient } from '#/api/request';
+
+export namespace UserApi {
+  export interface GetUserListParams {
+    page?: string;
+    pageSize?: string;
+  }
+  
+  export interface User {
+    id: string;
+    userName: string;
+  }
+  
+  export type GetUserListResponse = { users: User[]; total: string };
+}
+
+export async function getUserList(params: UserApi.GetUserListParams) {
+  return requestClient.get<UserApi.GetUserListResponse>('/api/user', { params });
+}
+
+export async function updateUser(id: string, data: UserApi.UpdateUserBody) {
+  return requestClient.put<UserApi.UpdateUserResponse>(`/api/user/${id}`, data);
+}
+```
 
 ### 自定义钩子
 

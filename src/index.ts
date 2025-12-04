@@ -17,7 +17,7 @@ const getImportStatement = (requestLibPath: string) => {
   if (requestLibPath) {
     return `import request from '${requestLibPath}'`;
   }
-  return `import { request } from "umi"`;
+  return `import { request } from "request"`;
 };
 
 export type GenerateServiceProps = {
@@ -171,7 +171,29 @@ export type GenerateServiceProps = {
     msw?: boolean;
   };
   /**切割类型声明文件,默认为false*/
-  splitDeclare?:boolean
+  splitDeclare?:boolean;
+
+  /**
+   * 合并模式：将类型定义和请求函数生成在同一个文件中
+   * 生成格式类似：
+   * export namespace UserApi { ... }
+   * export async function getUser(...) { ... }
+   * 默认为 false
+   */
+  mergedMode?: boolean;
+
+  /**
+   * 当 API 有多个 tags 时，只使用第一个 tag 进行分组
+   * 避免同一个 API 在多个文件中重复生成
+   * 默认为 false
+   */
+  useFirstTagOnly?: boolean;
+
+  /**
+   * 是否生成 index.ts 导出文件
+   * 默认为 true
+   */
+  generateIndex?: boolean;
 };
 
 const converterSwaggerToOpenApi = (swagger: any) => {
